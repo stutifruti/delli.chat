@@ -1,64 +1,94 @@
-import json
+import os
 import secrets
-from pathlib import Path
 from datetime import datetime, timezone
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-TOKENS_FILE = DATA_DIR / "chat_tokens.json"
+from supabase import create_client, Client
 
 
-def _read_json_file(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
 
 
-def _write_json_file(path: Path, data: dict) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def _get_supabase() -> Client:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise ValueError("SUPABASE_URL or SUPABASE_KEY is missing from .env")
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 async def create_chat_token(youth_id: str) -> dict:
-    data = _read_json_file(TOKENS_FILE)
+    """
+    Create a new secure token for a youth and store it in Supabase chat_links.
+    """
+    try:
+        supabase = _get_supabase()
 
-    token = secrets.token_urlsafe(16)
+        token = secrets.token_urlsafe(16)
+        chat_url = f"{FRONTEND_BASE_URL}/chat?token={token}"
 
-    data[token] = {
-        "youthId": youth_id,
-        "createdAt": datetime.now(timezone.utc).isoformat(),
-        "isActive": True,
-    }
+        payload = {
+            "youth_id": youth_id,
+            "token": token,
+            "chat_url": chat_url,
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
 
-    _write_json_file(TOKENS_FILE, data)
+        supabase.table("chat_links").insert(payload).execute()
 
-    return {
-        "token": token,
-        "youthId": youth_id,
-    }
+        return {
+            "token": token,
+            "youthId": youth_id,
+            "chatUrl": chat_url,
+        }
+    except Exception as e:
+        print(f"[token_service] create_chat_token error: {e}")
+        return {}
 
 
 async def resolve_chat_token(token: str) -> dict:
-    data = _read_json_file(TOKENS_FILE)
-    record = data.get(token)
+    """
+    Resolve a public token to the internal youth_id.
+    """
+    try:
+        supabase = _get_supabase()
 
-    if not record or not record.get("isActive"):
+        res = (
+            supabase.table("chat_links")
+            .select("*")
+            .eq("token", token)
+            .eq("is_active", True)
+            .maybe_single()
+            .execute()
+        )
+
+        row = res.data or {}
+        if not row:
+            return {}
+
+        return {
+            "youthId": row.get("youth_id"),
+            "token": row.get("token"),
+            "chatUrl": row.get("chat_url"),
+            "isActive": row.get("is_active", False),
+            "createdAt": row.get("created_at"),
+        }
+    except Exception as e:
+        print(f"[token_service] resolve_chat_token error: {e}")
         return {}
-
-    return record
 
 
 async def deactivate_chat_token(token: str) -> bool:
-    data = _read_json_file(TOKENS_FILE)
-    if token not in data:
-        return False
+    """
+    Deactivate an existing token so the chat link no longer works.
+    """
+    try:
+        supabase = _get_supabase()
 
-    data[token]["isActive"] = False
-    _write_json_file(TOKENS_FILE, data)
-    return True
+        supabase.table("chat_links").update(
+            {"is_active": False}
+        ).eq("token", token).execute()
+
+        return True
+    except Exception as e:
+        print(f"[token_service] deactivate_chat_token error: {e}")
+        return False

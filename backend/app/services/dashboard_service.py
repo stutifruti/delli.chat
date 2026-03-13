@@ -1,51 +1,88 @@
-import json
 import os
-from pathlib import Path
 from typing import Optional
-from datetime import datetime, timezone
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-CONTEXT_FILE = DATA_DIR / "youth_context.json"
-WORKER_PAYLOADS_DIR = DATA_DIR / "worker_payloads"
-WORKER_PAYLOADS_DIR.mkdir(parents=True, exist_ok=True)
+from supabase import create_client, Client
 
 
-def _read_json_file(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 
-def _write_json_file(path: Path, data: dict) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def _get_supabase() -> Client:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise ValueError("SUPABASE_URL or SUPABASE_KEY is missing from .env")
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 async def get_youth_context(youth_id: str) -> dict:
     """
-    Fetch local youth context from chatbot backend storage.
-    This is completely independent from any external dashboard.
+    Fetch latest worker-facing context for a youth from Supabase worker_updates.
+    Returns a dict shaped similarly to the old local context store.
     """
-    data = _read_json_file(CONTEXT_FILE)
-    return data.get(youth_id, {})
+    try:
+        supabase = _get_supabase()
+
+        res = (
+            supabase.table("worker_updates")
+            .select("*")
+            .eq("youth_id", youth_id)
+            .maybe_single()
+            .execute()
+        )
+
+        if not res:
+            return {}
+
+        row = getattr(res, "data", None) or {}
+        if not row:
+            return {}
+
+        return {
+            "urgency_label": row.get("risk_label"),
+            "requires_escalation": row.get("requires_escalation", False),
+            "status": "escalated" if row.get("requires_escalation") else "active",
+            "key_themes": row.get("key_themes", []),
+            "suggested_follow_up": row.get("suggested_follow_up", ""),
+            "notes": row.get("summary_text", ""),
+            "emotional_state": row.get("emotional_state", "Unknown"),
+            "risk_indicators": row.get("risk_indicators", []),
+            "overall_risk": row.get("overall_risk"),
+            "updated_at": row.get("updated_at"),
+        }
+    except Exception as e:
+        print(f"[dashboard_service] get_youth_context error: {e}")
+        return {}
 
 
 async def save_youth_context(youth_id: str, context: dict) -> None:
     """
-    Save or update youth context locally.
+    Optional helper to write arbitrary context fields into worker_updates.
     """
-    data = _read_json_file(CONTEXT_FILE)
-    existing = data.get(youth_id, {})
-    existing.update(context)
-    data[youth_id] = existing
-    _write_json_file(CONTEXT_FILE, data)
+    try:
+        supabase = _get_supabase()
+
+        payload = {
+            "youth_id": youth_id,
+            "risk_label": context.get("urgency_label"),
+            "requires_escalation": context.get("requires_escalation", False),
+            "key_themes": context.get("key_themes", []),
+            "suggested_follow_up": context.get("suggested_follow_up", ""),
+            "summary_text": context.get("notes", ""),
+            "emotional_state": context.get("emotional_state", "Unknown"),
+            "risk_indicators": context.get("risk_indicators", []),
+            "overall_risk": context.get("overall_risk") or context.get("urgency_label"),
+            "updated_at": context.get("updated_at"),
+        }
+
+        res = (
+            supabase.table("worker_updates")
+            .upsert(payload, on_conflict="youth_id")
+            .execute()
+        )
+
+        print("[dashboard_service] save_youth_context response:", res)
+
+    except Exception as e:
+        print(f"[dashboard_service] save_youth_context error: {e}")
 
 
 async def update_youth_session(
@@ -56,42 +93,123 @@ async def update_youth_session(
     suggested_follow_up: Optional[str],
     tldr_notes: Optional[str] = None,
 ) -> None:
-    context_data = _read_json_file(CONTEXT_FILE)
-    existing = context_data.get(youth_id, {})
+    """
+    Upsert latest worker-facing metadata into Supabase worker_updates.
+    Keeps existing values when None is passed in.
+    """
+    try:
+        supabase = _get_supabase()
 
-    if distress_level is not None:
-        existing["urgency_label"] = distress_level
+        existing_res = (
+            supabase.table("worker_updates")
+            .select("*")
+            .eq("youth_id", youth_id)
+            .maybe_single()
+            .execute()
+        )
 
-    if requires_escalation is not None:
-        existing["requires_escalation"] = requires_escalation
-        existing["status"] = "escalated" if requires_escalation else "active"
+        existing = {}
+        if existing_res and getattr(existing_res, "data", None):
+            existing = existing_res.data
 
-    if key_themes is not None:
-        existing["key_themes"] = key_themes
+        payload = {
+            "youth_id": youth_id,
+            "risk_label": distress_level if distress_level is not None else existing.get("risk_label"),
+            "requires_escalation": (
+                requires_escalation
+                if requires_escalation is not None
+                else existing.get("requires_escalation", False)
+            ),
+            "key_themes": key_themes if key_themes is not None else existing.get("key_themes", []),
+            "suggested_follow_up": (
+                suggested_follow_up
+                if suggested_follow_up is not None
+                else existing.get("suggested_follow_up", "")
+            ),
+            "summary_text": (
+                tldr_notes
+                if tldr_notes is not None
+                else existing.get("summary_text", "")
+            ),
+            "emotional_state": existing.get("emotional_state", "Unknown"),
+            "risk_indicators": existing.get("risk_indicators", []),
+            "overall_risk": (
+                distress_level
+                if distress_level is not None
+                else existing.get("overall_risk") or existing.get("risk_label")
+            ),
+        }
 
-    if suggested_follow_up is not None:
-        existing["suggested_follow_up"] = suggested_follow_up
+        print("[dashboard_service] update_youth_session payload:", payload)
 
-    if tldr_notes is not None:
-        existing["notes"] = tldr_notes
+        res = (
+            supabase.table("worker_updates")
+            .upsert(payload, on_conflict="youth_id")
+            .execute()
+        )
 
-    existing["updated_at"] = datetime.now(timezone.utc).isoformat()
+        print("[dashboard_service] update_youth_session response:", res)
 
-    context_data[youth_id] = existing
-    _write_json_file(CONTEXT_FILE, context_data)
+    except Exception as e:
+        print(f"[dashboard_service] update_youth_session error: {e}")
 
 
 async def save_worker_payload(youth_id: str, payload: dict) -> None:
     """
-    Save the latest worker JSON as a standalone file for easy extraction.
+    Save a complete worker payload into worker_updates.
+    Useful if you want to persist the packaged structure after building it.
     """
-    output_path = WORKER_PAYLOADS_DIR / f"{youth_id}.json"
-    _write_json_file(output_path, payload)
+    try:
+        supabase = _get_supabase()
+
+        risk = payload.get("risk", {})
+        summary = payload.get("summary", {})
+
+        db_payload = {
+            "youth_id": youth_id,
+            "risk_label": risk.get("label"),
+            "requires_escalation": risk.get("requiresEscalation", False),
+            "key_themes": risk.get("keyThemes", []),
+            "suggested_follow_up": risk.get("suggestedFollowUp", ""),
+            "summary_text": summary.get("text", ""),
+            "emotional_state": summary.get("emotionalState", "Unknown"),
+            "risk_indicators": summary.get("riskIndicators", []),
+            "overall_risk": summary.get("overallRisk") or risk.get("label"),
+            "updated_at": payload.get("timestamp"),
+        }
+
+        res = (
+            supabase.table("worker_updates")
+            .upsert(db_payload, on_conflict="youth_id")
+            .execute()
+        )
+
+        print("[dashboard_service] save_worker_payload response:", res)
+
+    except Exception as e:
+        print(f"[dashboard_service] save_worker_payload error: {e}")
 
 
 async def get_worker_payload(youth_id: str) -> dict:
     """
-    Return the saved worker JSON file if it exists.
+    Return latest raw worker_updates row for this youth.
     """
-    output_path = WORKER_PAYLOADS_DIR / f"{youth_id}.json"
-    return _read_json_file(output_path)
+    try:
+        supabase = _get_supabase()
+
+        res = (
+            supabase.table("worker_updates")
+            .select("*")
+            .eq("youth_id", youth_id)
+            .maybe_single()
+            .execute()
+        )
+
+        if not res:
+            return {}
+
+        return getattr(res, "data", None) or {}
+
+    except Exception as e:
+        print(f"[dashboard_service] get_worker_payload error: {e}")
+        return {}

@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -151,10 +152,17 @@ async def create_link(body: CreateLinkRequest):
     """
     record = await create_chat_token(body.youthId)
 
+    if not record or "token" not in record:
+        return {
+            "ok": False,
+            "error": "Failed to create chat link"
+        }
+
     return {
-        "youthId": body.youthId,
+        "ok": True,
+        "youthId": record["youthId"],
         "token": record["token"],
-        "chatUrl": f"http://localhost:5173/chat?token={record['token']}",
+        "chatUrl": record["chatUrl"],
     }
 
 
