@@ -1,0 +1,14 @@
+{
+  "alex-001": {
+    "urgency_label": "moderate",
+    "requires_escalation": false,
+    "status": "active",
+    "key_themes": [
+      "emotional distress",
+      "feeling upset"
+    ],
+    "suggested_follow_up": "Ask the user if they'd like to vent about what specifically triggered the feeling or if they need a distraction.",
+    "updated_at": "2026-03-12T18:14:28.964447+00:00",
+    "notes": "The youth expressed feeling significantly overwhelmed by school and life responsibilities. The worker provided immediate emotional support and validation."
+  }
+}
