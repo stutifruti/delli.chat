@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 
 const CHATBOT_API = import.meta.env.VITE_CHATBOT_API_URL || "http://localhost:8001";
 
-export default function YouthChatbot({ youthId }) {
+export default function YouthChatbot({ youthId, instagramUsername }) {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -56,6 +56,7 @@ export default function YouthChatbot({ youthId }) {
         },
         body: JSON.stringify({
           youthId,
+          instagramUsername,
           distressLevel: workerData?.distressLevel || "low",
           requiresEscalation: workerData?.requiresEscalation || false,
           keyThemes: workerData?.keyThemes || [],
@@ -93,6 +94,7 @@ export default function YouthChatbot({ youthId }) {
         body: JSON.stringify({
           messages: apiMessages,
           youthId,
+          instagramUsername,
           previousContext: youthContext?.notes || null,
         }),
       });

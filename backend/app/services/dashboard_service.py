@@ -13,6 +13,32 @@ def _get_supabase() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
+async def get_case_id_from_username(instagram_username: str | None) -> str | None:
+    """
+    Resolve instagram username -> case_id from social_media_accounts.
+    """
+    if not instagram_username:
+        return None
+
+    try:
+        supabase = _get_supabase()
+
+        res = (
+            supabase.table("social_media_accounts")
+            .select("case_id")
+            .eq("username", instagram_username)
+            .eq("platform", "instagram")
+            .maybe_single()
+            .execute()
+        )
+
+        row = getattr(res, "data", None) or {}
+        return row.get("case_id")
+    except Exception as e:
+        print(f"[dashboard_service] get_case_id_from_username error: {e}")
+        return None
+
+
 async def get_youth_context(youth_id: str) -> dict:
     """
     Fetch latest worker-facing context for a youth from Supabase worker_updates.
@@ -47,6 +73,7 @@ async def get_youth_context(youth_id: str) -> dict:
             "risk_indicators": row.get("risk_indicators", []),
             "overall_risk": row.get("overall_risk"),
             "updated_at": row.get("updated_at"),
+            "instagram_username": row.get("instagram_username"),
         }
     except Exception as e:
         print(f"[dashboard_service] get_youth_context error: {e}")
@@ -60,8 +87,16 @@ async def save_youth_context(youth_id: str, context: dict) -> None:
     try:
         supabase = _get_supabase()
 
+        resolved_youth_id = youth_id
+        instagram_username = context.get("instagram_username")
+        if instagram_username:
+            case_id = await get_case_id_from_username(instagram_username)
+            if case_id:
+                resolved_youth_id = case_id
+
         payload = {
-            "youth_id": youth_id,
+            "youth_id": resolved_youth_id,
+            "instagram_username": instagram_username,
             "risk_label": context.get("urgency_label"),
             "requires_escalation": context.get("requires_escalation", False),
             "key_themes": context.get("key_themes", []),
@@ -91,19 +126,26 @@ async def update_youth_session(
     requires_escalation: Optional[bool],
     key_themes: Optional[list],
     suggested_follow_up: Optional[str],
+    instagram_username: Optional[str] = None,
     tldr_notes: Optional[str] = None,
 ) -> None:
     """
     Upsert latest worker-facing metadata into Supabase worker_updates.
-    Keeps existing values when None is passed in.
+    If instagram_username is provided, resolve its case_id and use that as youth_id.
     """
     try:
         supabase = _get_supabase()
 
+        resolved_youth_id = youth_id
+        if instagram_username:
+            case_id = await get_case_id_from_username(instagram_username)
+            if case_id:
+                resolved_youth_id = case_id
+
         existing_res = (
             supabase.table("worker_updates")
             .select("*")
-            .eq("youth_id", youth_id)
+            .eq("youth_id", resolved_youth_id)
             .maybe_single()
             .execute()
         )
@@ -113,7 +155,12 @@ async def update_youth_session(
             existing = existing_res.data
 
         payload = {
-            "youth_id": youth_id,
+            "youth_id": resolved_youth_id,
+            "instagram_username": (
+                instagram_username
+                if instagram_username is not None
+                else existing.get("instagram_username")
+            ),
             "risk_label": distress_level if distress_level is not None else existing.get("risk_label"),
             "requires_escalation": (
                 requires_escalation
@@ -157,16 +204,24 @@ async def update_youth_session(
 async def save_worker_payload(youth_id: str, payload: dict) -> None:
     """
     Save a complete worker payload into worker_updates.
-    Useful if you want to persist the packaged structure after building it.
+    If instagram_username is present, resolve case_id and use that as youth_id.
     """
     try:
         supabase = _get_supabase()
 
         risk = payload.get("risk", {})
         summary = payload.get("summary", {})
+        instagram_username = payload.get("instagram_username")
+
+        resolved_youth_id = youth_id
+        if instagram_username:
+            case_id = await get_case_id_from_username(instagram_username)
+            if case_id:
+                resolved_youth_id = case_id
 
         db_payload = {
-            "youth_id": youth_id,
+            "youth_id": resolved_youth_id,
+            "instagram_username": instagram_username,
             "risk_label": risk.get("label"),
             "requires_escalation": risk.get("requiresEscalation", False),
             "key_themes": risk.get("keyThemes", []),

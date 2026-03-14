@@ -8,8 +8,10 @@ export default function ChatPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
   const directYouthId = searchParams.get("id");
+  const directInstagramUsername = searchParams.get("username");
 
   const [youthId, setYouthId] = useState(directYouthId || null);
+  const [instagramUsername, setInstagramUsername] = useState(directInstagramUsername || null);
   const [loading, setLoading] = useState(!directYouthId && !!token);
 
   useEffect(() => {
@@ -21,6 +23,7 @@ export default function ChatPage() {
       .then((data) => {
         if (data.ok && data.youthId) {
           setYouthId(data.youthId);
+          setInstagramUsername(data.instagramUsername || null);
         }
       })
       .catch(() => {})
@@ -66,5 +69,10 @@ export default function ChatPage() {
     );
   }
 
-  return <YouthChatbot youthId={youthId} />;
+  return (
+    <YouthChatbot
+      youthId={youthId}
+      instagramUsername={instagramUsername}
+    />
+  );
 }

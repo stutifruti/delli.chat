@@ -32,12 +32,14 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     messages: list
     youthId: str
+    instagramUsername: Optional[str] = None
     previousContext: Optional[str] = None
 
 
 class TldrRequest(BaseModel):
     conversation: str
     youthId: str
+    instagramUsername: Optional[str] = None
 
 
 class SessionData(BaseModel):
@@ -46,10 +48,12 @@ class SessionData(BaseModel):
     requiresEscalation: bool
     keyThemes: Optional[list] = []
     suggestedFollowUp: Optional[str] = ""
+    instagramUsername: Optional[str] = None
 
 
 class CreateLinkRequest(BaseModel):
     youthId: str
+    instagramUsername: Optional[str] = None
 
 
 # ── Basic health check ─────────────────────────────────────────
@@ -81,6 +85,7 @@ async def get_session(youth_id: str):
         "keyThemes": data.get("key_themes", []),
         "suggestedFollowUp": data.get("suggested_follow_up", ""),
         "notes": data.get("notes"),
+        "instagramUsername": data.get("instagram_username"),
     }
 
 
@@ -108,6 +113,7 @@ async def save_session(body: SessionData):
         requires_escalation=body.requiresEscalation,
         key_themes=body.keyThemes,
         suggested_follow_up=body.suggestedFollowUp,
+        instagram_username=body.instagramUsername,
     )
 
     return {"ok": True}
@@ -126,6 +132,7 @@ async def tldr_route(body: TldrRequest):
         requires_escalation=None,
         key_themes=None,
         suggested_follow_up=None,
+        instagram_username=body.instagramUsername,
         tldr_notes=summary.get("summary") if isinstance(summary, dict) else str(summary),
     )
 
@@ -150,7 +157,7 @@ async def create_link(body: CreateLinkRequest):
     """
     Create a unique token-based chat link for a youth.
     """
-    record = await create_chat_token(body.youthId)
+    record = await create_chat_token(body.youthId, body.instagramUsername)
 
     if not record or "token" not in record:
         return {
@@ -161,6 +168,7 @@ async def create_link(body: CreateLinkRequest):
     return {
         "ok": True,
         "youthId": record["youthId"],
+        "instagramUsername": record.get("instagramUsername"),
         "token": record["token"],
         "chatUrl": record["chatUrl"],
     }
@@ -179,6 +187,7 @@ async def resolve_link(token: str):
     return {
         "ok": True,
         "youthId": record["youthId"],
+        "instagramUsername": record.get("instagramUsername"),
     }
 
 

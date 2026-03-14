@@ -15,18 +15,52 @@ def _get_supabase() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-async def create_chat_token(youth_id: str) -> dict:
+async def get_case_id_from_username(instagram_username: str | None) -> str | None:
     """
-    Create a new secure token for a youth and store it in Supabase chat_links.
+    Resolve instagram username -> case_id from social_media_accounts.
+    """
+    if not instagram_username:
+        return None
+
+    try:
+        supabase = _get_supabase()
+
+        res = (
+            supabase.table("social_media_accounts")
+            .select("case_id")
+            .eq("username", instagram_username)
+            .eq("platform", "instagram")
+            .maybe_single()
+            .execute()
+        )
+
+        row = getattr(res, "data", None) or {}
+        return row.get("case_id")
+    except Exception as e:
+        print(f"[token_service] get_case_id_from_username error: {e}")
+        return None
+
+
+async def create_chat_token(youth_id: str, instagram_username: str | None = None) -> dict:
+    """
+    Create a new secure token and store it in Supabase chat_links.
+    If instagram_username is provided, resolve its case_id and use that as youth_id.
     """
     try:
         supabase = _get_supabase()
+
+        resolved_youth_id = youth_id
+        if instagram_username:
+            case_id = await get_case_id_from_username(instagram_username)
+            if case_id:
+                resolved_youth_id = case_id
 
         token = secrets.token_urlsafe(16)
         chat_url = f"{FRONTEND_BASE_URL}/chat?token={token}"
 
         payload = {
-            "youth_id": youth_id,
+            "youth_id": resolved_youth_id,
+            "instagram_username": instagram_username,
             "token": token,
             "chat_url": chat_url,
             "is_active": True,
@@ -37,7 +71,8 @@ async def create_chat_token(youth_id: str) -> dict:
 
         return {
             "token": token,
-            "youthId": youth_id,
+            "youthId": resolved_youth_id,
+            "instagramUsername": instagram_username,
             "chatUrl": chat_url,
         }
     except Exception as e:
@@ -61,12 +96,13 @@ async def resolve_chat_token(token: str) -> dict:
             .execute()
         )
 
-        row = res.data or {}
+        row = getattr(res, "data", None) or {}
         if not row:
             return {}
 
         return {
             "youthId": row.get("youth_id"),
+            "instagramUsername": row.get("instagram_username"),
             "token": row.get("token"),
             "chatUrl": row.get("chat_url"),
             "isActive": row.get("is_active", False),
