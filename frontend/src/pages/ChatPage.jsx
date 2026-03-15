@@ -14,6 +14,11 @@ export default function ChatPage() {
   const [instagramUsername, setInstagramUsername] = useState(directInstagramUsername || null);
   const [loading, setLoading] = useState(!directYouthId && !!token);
 
+  const [usernameInput, setUsernameInput] = useState("");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [linkMessage, setLinkMessage] = useState("");
+
   useEffect(() => {
     if (directYouthId) return;
     if (!token) return;
@@ -30,6 +35,47 @@ export default function ChatPage() {
       .finally(() => setLoading(false));
   }, [token, directYouthId]);
 
+  const handleUsernameSubmit = async () => {
+    const clean = usernameInput.trim().replace(/^@/, "");
+    if (!clean) return;
+
+    setLookupLoading(true);
+    setLookupError("");
+    setLinkMessage("");
+
+    try {
+      const response = await fetch(`${CHATBOT_API}/api/links/get-or-create-by-username`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          instagramUsername: clean,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.ok) {
+        setLookupError(data.error || "Could not find your username in the system.");
+        return;
+      }
+
+      setLinkMessage(
+        data.existing
+          ? "We found your existing chat link. Please keep using the same one."
+          : "Your chat link has been created. Please save it and keep using the same link."
+      );
+
+      // redirect into chat
+      window.location.href = data.chatUrl;
+    } catch {
+      setLookupError("Something went wrong. Please try again.");
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div
@@ -44,6 +90,141 @@ export default function ChatPage() {
         }}
       >
         Loading chat...
+      </div>
+    );
+  }
+
+  if (!youthId && !token) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "linear-gradient(135deg, #0f1117 0%, #1a1f2e 50%, #0f1117 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "16px",
+          fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "420px",
+            background: "#13161e",
+            borderRadius: "24px",
+            border: "1px solid #1e2433",
+            boxShadow: "0 32px 80px rgba(0,0,0,0.6)",
+            padding: "28px 24px",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "34px", marginBottom: "12px" }}>💚</div>
+          <div
+            style={{
+              fontFamily: "'Syne', sans-serif",
+              fontWeight: 800,
+              fontSize: "22px",
+              color: "#f0f4ff",
+              marginBottom: "10px",
+            }}
+          >
+            Welcome to Delli
+          </div>
+          <div
+            style={{
+              fontSize: "13px",
+              color: "#94a3b8",
+              lineHeight: "1.6",
+              marginBottom: "18px",
+            }}
+          >
+            Enter your Instagram username to continue. If you already have a chat link,
+            we’ll bring you back to it. If not, we’ll create one for you.
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <input
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+              placeholder="@yourusername"
+              style={{
+                width: "100%",
+                background: "#1a1f2e",
+                border: "1px solid #2d3748",
+                borderRadius: "14px",
+                color: "#e2e8f0",
+                fontSize: "14px",
+                padding: "14px 16px",
+                outline: "none",
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleUsernameSubmit();
+              }}
+            />
+
+            <button
+              onClick={handleUsernameSubmit}
+              disabled={lookupLoading || !usernameInput.trim()}
+              style={{
+                width: "100%",
+                padding: "12px",
+                background: usernameInput.trim()
+                  ? "linear-gradient(135deg, #6ee7b7, #3b82f6)"
+                  : "#2d3748",
+                border: "none",
+                borderRadius: "14px",
+                color: "#0f1117",
+                fontWeight: 700,
+                fontSize: "14px",
+                cursor: usernameInput.trim() ? "pointer" : "default",
+              }}
+            >
+              {lookupLoading ? "Checking..." : "Continue"}
+            </button>
+          </div>
+
+          {lookupError && (
+            <div
+              style={{
+                marginTop: "14px",
+                fontSize: "12px",
+                color: "#fca5a5",
+              }}
+            >
+              {lookupError}
+            </div>
+          )}
+
+          {linkMessage && (
+            <div
+              style={{
+                marginTop: "14px",
+                fontSize: "12px",
+                color: "#86efac",
+              }}
+            >
+              {linkMessage}
+            </div>
+          )}
+
+          <div
+            style={{
+              marginTop: "18px",
+              fontSize: "11px",
+              color: "#64748b",
+              lineHeight: "1.5",
+            }}
+          >
+            Please keep your chat link safe and reuse the same one whenever possible.
+          </div>
+        </div>
       </div>
     );
   }

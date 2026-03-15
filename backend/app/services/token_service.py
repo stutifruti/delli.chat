@@ -16,9 +16,6 @@ def _get_supabase() -> Client:
 
 
 async def get_case_id_from_username(instagram_username: str | None) -> str | None:
-    """
-    Resolve instagram username -> case_id from social_media_accounts.
-    """
     if not instagram_username:
         return None
 
@@ -41,11 +38,42 @@ async def get_case_id_from_username(instagram_username: str | None) -> str | Non
         return None
 
 
+async def find_active_chat_link_by_username(instagram_username: str | None) -> dict:
+    if not instagram_username:
+        return {}
+
+    try:
+        supabase = _get_supabase()
+
+        res = (
+            supabase.table("chat_links")
+            .select("*")
+            .eq("instagram_username", instagram_username)
+            .eq("is_active", True)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        rows = getattr(res, "data", None) or []
+        if not rows:
+            return {}
+
+        row = rows[0]
+        return {
+            "token": row.get("token"),
+            "youthId": row.get("youth_id"),
+            "instagramUsername": row.get("instagram_username"),
+            "chatUrl": row.get("chat_url"),
+            "isActive": row.get("is_active", False),
+            "createdAt": row.get("created_at"),
+        }
+    except Exception as e:
+        print(f"[token_service] find_active_chat_link_by_username error: {e}")
+        return {}
+
+
 async def create_chat_token(youth_id: str, instagram_username: str | None = None) -> dict:
-    """
-    Create a new secure token and store it in Supabase chat_links.
-    If instagram_username is provided, resolve its case_id and use that as youth_id.
-    """
     try:
         supabase = _get_supabase()
 
@@ -80,10 +108,37 @@ async def create_chat_token(youth_id: str, instagram_username: str | None = None
         return {}
 
 
+async def get_or_create_chat_link_by_username(instagram_username: str) -> dict:
+    existing = await find_active_chat_link_by_username(instagram_username)
+    if existing:
+        return {
+            "ok": True,
+            "existing": True,
+            **existing,
+        }
+
+    case_id = await get_case_id_from_username(instagram_username)
+    if not case_id:
+        return {
+            "ok": False,
+            "error": "Username not found in system",
+        }
+
+    created = await create_chat_token(case_id, instagram_username)
+    if not created:
+        return {
+            "ok": False,
+            "error": "Failed to create chat link",
+        }
+
+    return {
+        "ok": True,
+        "existing": False,
+        **created,
+    }
+
+
 async def resolve_chat_token(token: str) -> dict:
-    """
-    Resolve a public token to the internal youth_id.
-    """
     try:
         supabase = _get_supabase()
 
@@ -114,9 +169,6 @@ async def resolve_chat_token(token: str) -> dict:
 
 
 async def deactivate_chat_token(token: str) -> bool:
-    """
-    Deactivate an existing token so the chat link no longer works.
-    """
     try:
         supabase = _get_supabase()
 
