@@ -11,7 +11,9 @@ export default function ChatPage() {
   const directInstagramUsername = searchParams.get("username");
 
   const [youthId, setYouthId] = useState(directYouthId || null);
-  const [instagramUsername, setInstagramUsername] = useState(directInstagramUsername || null);
+  const [instagramUsername, setInstagramUsername] = useState(
+    directInstagramUsername || null
+  );
   const [loading, setLoading] = useState(!directYouthId && !!token);
 
   const [usernameInput, setUsernameInput] = useState("");
@@ -44,15 +46,18 @@ export default function ChatPage() {
     setLinkMessage("");
 
     try {
-      const response = await fetch(`${CHATBOT_API}/api/links/get-or-create-by-username`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          instagramUsername: clean,
-        }),
-      });
+      const response = await fetch(
+        `${CHATBOT_API}/api/links/get-or-create-by-username`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            instagramUsername: clean,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -67,7 +72,6 @@ export default function ChatPage() {
           : "Your chat link has been created. Please save it and keep using the same link."
       );
 
-      // redirect into chat
       window.location.href = data.chatUrl;
     } catch {
       setLookupError("Something went wrong. Please try again.");
@@ -81,6 +85,7 @@ export default function ChatPage() {
       <div
         style={{
           minHeight: "100vh",
+          width: "100%",
           background: "#0f1117",
           display: "flex",
           alignItems: "center",
@@ -99,7 +104,9 @@ export default function ChatPage() {
       <div
         style={{
           minHeight: "100vh",
-          background: "linear-gradient(135deg, #0f1117 0%, #1a1f2e 50%, #0f1117 100%)",
+          width: "100%",
+          background:
+            "linear-gradient(135deg, #0f1117 0%, #1a1f2e 50%, #0f1117 100%)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -120,6 +127,7 @@ export default function ChatPage() {
           }}
         >
           <div style={{ fontSize: "34px", marginBottom: "12px" }}>💚</div>
+
           <div
             style={{
               fontFamily: "'Syne', sans-serif",
@@ -131,6 +139,7 @@ export default function ChatPage() {
           >
             Welcome to Delli
           </div>
+
           <div
             style={{
               fontSize: "13px",
@@ -139,8 +148,8 @@ export default function ChatPage() {
               marginBottom: "18px",
             }}
           >
-            Enter your Instagram username to continue. If you already have a chat link,
-            we’ll bring you back to it. If not, we’ll create one for you.
+            Enter your Instagram username to continue. If you already have a chat
+            link, we’ll bring it back. If not, we’ll create one for you.
           </div>
 
           <div
@@ -148,14 +157,20 @@ export default function ChatPage() {
               display: "flex",
               flexDirection: "column",
               gap: "12px",
+              width: "100%",
             }}
           >
             <input
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               placeholder="@yourusername"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleUsernameSubmit();
+              }}
               style={{
                 width: "100%",
+                boxSizing: "border-box",
+                display: "block",
                 background: "#1a1f2e",
                 border: "1px solid #2d3748",
                 borderRadius: "14px",
@@ -164,9 +179,6 @@ export default function ChatPage() {
                 padding: "14px 16px",
                 outline: "none",
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleUsernameSubmit();
-              }}
             />
 
             <button
@@ -174,6 +186,8 @@ export default function ChatPage() {
               disabled={lookupLoading || !usernameInput.trim()}
               style={{
                 width: "100%",
+                boxSizing: "border-box",
+                display: "block",
                 padding: "12px",
                 background: usernameInput.trim()
                   ? "linear-gradient(135deg, #6ee7b7, #3b82f6)"
@@ -222,7 +236,7 @@ export default function ChatPage() {
               lineHeight: "1.5",
             }}
           >
-            Please keep your chat link safe and reuse the same one whenever possible.
+            Please keep your chat link safe and reuse the same one.
           </div>
         </div>
       </div>
@@ -234,6 +248,7 @@ export default function ChatPage() {
       <div
         style={{
           minHeight: "100vh",
+          width: "100%",
           background: "#0f1117",
           display: "flex",
           alignItems: "center",
